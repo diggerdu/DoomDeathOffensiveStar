@@ -1,0 +1,1 @@
+nmap -sU -pU:123 -Pn -n --script=ntp-monlist 27.22.53.19
